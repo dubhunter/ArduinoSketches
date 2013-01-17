@@ -4,12 +4,6 @@
 #include <NotifyrClient.h>
 #include "Credentials.h"
 
-//#define DATA A5
-//#define WR   A4
-//#define CS   A3
-//#define CS2  A2
-//#define CS3  A1
-//#define CS4  A0
 #define DATA1 22
 #define WR1   23
 #define CS1   28
@@ -43,13 +37,17 @@
 #define CS23  8
 #define CS24  9
 
-byte mac[] = { 0x90, 0xA2, 0xDB, 0x00, 0x00, 0x02 };
+byte mac[] = { 
+  0x90, 0xA2, 0xDB, 0x00, 0x00, 0x02 };
 String response = String();
 String sms = String();
 unsigned long charCounter = 0;
 bool notifyrConnected = false;
 
-const int CHAR_WIDTH = 32;
+const int CHAR_WIDTH = 28;
+const int LARGE_CHAR_WIDTH = 14;
+//const int LARGE_CHAR_MAX = 14;
+const int LARGE_CHAR_MAX = 42;
 
 NotifyrClient notifyr;
 
@@ -59,7 +57,7 @@ HT1632LEDMatrix matrix3 = HT1632LEDMatrix(DATA3, WR3, CS17, CS18, CS19, CS20, CS
 
 void setup() {
   Serial.begin(9600);
-  
+
 //  pinMode(CS1, OUTPUT);
 //  pinMode(CS2, OUTPUT);
 //  pinMode(CS3, OUTPUT);
@@ -88,60 +86,78 @@ void setup() {
   matrix1.begin(HT1632_COMMON_16NMOS);
   matrix2.begin(HT1632_COMMON_16NMOS);
   matrix3.begin(HT1632_COMMON_16NMOS);
-  
+
   Serial.println("Writing to matrix1");
   matrix1.clearScreen();
   matrix1.setTextSize(2);
   matrix1.setTextColor(1);
   matrix1.setCursor(0, 0);
-  matrix1.print("TWILIO SCALES...");
-//  matrix1.print("1234567890ABCDEF");
+  matrix1.print("<<TWILIO SMS>>");
+//  matrix1.print("1234567890ABCD");
   matrix1.writeScreen();  
   matrix1.setTextSize(1);
-  
+
   Serial.println("Writing to matrix2");
   matrix2.clearScreen();
   matrix2.setTextSize(2);
   matrix2.setTextColor(1);
   matrix2.setCursor(0, 0);
-  matrix2.print("ROW 2 OH YEA");
-//  matrix2.print("1234567890ABCDEF");
+//  matrix2.print("ROW 2 OH YEA..");
+  matrix2.print("<415.689.7448>");
+//  matrix2.print("1234567890ABCD");
   matrix2.writeScreen();
   matrix2.setTextSize(1);
-  
+
   Serial.println("Writing to matrix3");
   matrix3.clearScreen();
   matrix3.setTextSize(2);
   matrix3.setTextColor(1);
   matrix3.setCursor(0, 0);
-  matrix3.print("ROW 3 BOOM");
+//  matrix3.print("ROW 3 BOOM!!!!");
+  matrix3.print("INITIALIZING..");
+//  matrix3.print("1234567890ABCD");
   matrix3.writeScreen();
-  matrix3.setTextSize(1);
-  
+
   Serial.println("Initializing Ethernet...");
   Ethernet.begin(mac);
-  
+
   NotifyrClient::debug();
-  
+
   while (!notifyrConnected) {
+    matrix3.clearScreen();
+    matrix3.setCursor(0, 0);
+    matrix3.print("CONNECTING...");
+    matrix3.writeScreen();
+    
     Serial.print("Connecting to Notifyr (");
     Serial.print(NOTIFYR_KEY);
     Serial.println(")...");
-    if (notifyr.connect(NOTIFYR_KEY, "hyduino")) {
+    if (notifyr.connect(NOTIFYR_KEY, "sms")) {
+      matrix3.clearScreen();
+      matrix3.setCursor(0, 0);
+      matrix3.print("CONNECTED!    ");
+      matrix3.writeScreen();
+      
       Serial.println("Connected!");
       notifyrConnected = true;
       notifyr.bind(displayData);
     } else {
+      matrix3.clearScreen();
+      matrix3.setCursor(0, 0);
+      matrix3.print("FAILED RETRY..");
+      matrix3.writeScreen();
+      
       Serial.println("Connection failed, trying again in 3 seconds...");
-//      matrix.setCursor(0, 0);  
-//      matrix.print("NETWORK ERROR");
-//      matrix.writeScreen();
       Serial.println();
       delay(3000);
     }
   }
-  
+
   Serial.println("Joined: " + Ethernet.localIP());
+  
+  matrix1.setTextSize(1);
+  matrix2.setTextSize(1);
+  matrix3.setTextSize(1);
 }
 
 void loop() {
@@ -149,15 +165,119 @@ void loop() {
 }
 
 void displayData(String data) {
-  Serial.println("data: " + data);
-//  Serial.println("Clearing screen");
-//  matrix.clearScreen();
-//  Serial.println("Setting cursor");
-//  matrix.setCursor(0, 0);
-//  
-//  Serial.println("Printing: " + data);
-//  matrix.print(data);
-//  
-//  Serial.println("Writing...");
-//  matrix.writeScreen();
+  String line1 = data;
+  String line2 = "";
+  String line3 = "";
+  String line4 = "";
+  String line5 = "";
+  String line6 = "";
+  int space = 0;
+  int newline = 0;
+  boolean largePrint = line1.length() <= LARGE_CHAR_MAX;
+  int textSize = largePrint ? 2 : 1;
+  int lineWidth = largePrint ? LARGE_CHAR_WIDTH : CHAR_WIDTH;
+  
+  matrix1.setTextSize(textSize);
+  matrix2.setTextSize(textSize);
+  matrix3.setTextSize(textSize);
+
+  if (line1.length() > lineWidth) {
+    space = line1.lastIndexOf(" ", lineWidth);
+    if ((newline = line1.indexOf("\\n", space)) > 0) {
+      space = newline;
+    }
+    line2 = line1.substring(space + 1 + (newline > 0 ? 1 : 0));
+    line1 = line1.substring(0, space);
+  }
+
+  if (line2.length() > lineWidth) {
+    space = line2.lastIndexOf(" ", lineWidth);
+    if ((newline = line2.indexOf("\\n", space)) > 0) {
+      space = newline;
+    }
+    line3 = line2.substring(space + 1 + (newline > 0 ? 1 : 0));
+    line2 = line2.substring(0, space);
+  }
+
+  if (line3.length() > lineWidth) {
+    space = line3.lastIndexOf(" ", lineWidth);
+    if ((newline = line3.indexOf("\\n", space)) > 0) {
+      space = newline;
+    }
+    line4 = line3.substring(space + 1 + (newline > 0 ? 1 : 0));
+    line3 = line3.substring(0, space);
+  }
+
+  if (line4.length() > lineWidth) {
+    space = line4.lastIndexOf(" ", lineWidth);
+    if ((newline = line4.indexOf("\\n", space)) > 0) {
+      space = newline;
+    }
+    line5 = line4.substring(space + 1 + (newline > 0 ? 1 : 0));
+    line4 = line4.substring(0, space);
+  }
+
+  if (line5.length() > lineWidth) {
+    space = line5.lastIndexOf(" ", lineWidth);
+    if ((newline = line5.indexOf("\\n", space)) > 0) {
+      space = newline;
+    }
+    line6 = line5.substring(space + 1 + (newline > 0 ? 1 : 0));
+    line5 = line5.substring(0, space);
+  }
+  
+  if ((newline = line6.indexOf("\\n")) > 0) {
+    line6 = line6.substring(0, newline + 2);
+  }
+  
+  if (largePrint) {
+    line5 = line3;
+    line3 = line2;
+    line2 = "";
+    line4 = "";
+    line6 = "";
+  }
+
+  Serial.println();
+  Serial.println("Clearing screen...");
+  matrix1.clearScreen();
+  matrix2.clearScreen();
+  matrix3.clearScreen();
+
+  Serial.println();
+  Serial.println("Printing...");
+  Serial.println(line1);
+  Serial.println(line2);
+  Serial.println(line3);
+  Serial.println(line4);
+  Serial.println(line5);
+  Serial.println(line6);
+  
+  matrix1.setCursor(0, 0);
+  matrix1.print(line1);
+  if (!largePrint) {
+    matrix1.setCursor(0, 8);
+    matrix1.print(line2);
+  }
+
+  matrix2.setCursor(0, 0);
+  matrix2.print(line3);
+  if (!largePrint) {
+    matrix2.setCursor(0, 8);
+    matrix2.print(line4);
+  }
+
+  matrix3.setCursor(0, 0);
+  matrix3.print(line5);
+  if (!largePrint) {
+    matrix3.setCursor(0, 8);
+    matrix3.print(line6);
+  }
+
+  Serial.println();
+  Serial.println("Writing...");
+  matrix1.writeScreen();
+  matrix2.writeScreen();
+  matrix3.writeScreen();
 }
+
