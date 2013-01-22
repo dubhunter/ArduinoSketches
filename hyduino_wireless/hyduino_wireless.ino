@@ -1,6 +1,8 @@
+#include <Metro.h>
 #include <SPI.h>
 #include <WiFly.h>
-#include <NotifyrClient.h>
+//#include <NotifyrClient.h>
+#include <QueueList.h>
 #include "Credentials.h"
 
 #define PIN_POWER 2
@@ -10,7 +12,19 @@
 #define PIN_SENSOR_LIQUID A0
 #define PIN_SENSOR_LIGHT A5
 
-NotifyrClient notifyr;
+#define HOST "hyduino.willandchi.com"
+#define ENDPOINT "/event"
+//#define HOST "sign.willmason.me"
+//#define ENDPOINT "/stashboard"
+
+//NotifyrClient notifyr;
+
+WiFlyClient client = WiFlyClient(HOST, 80);
+
+QueueList <String> events;
+
+Metro sensorSampleMetro = Metro(100);
+Metro sensorSendMetro = Metro(10000);
 
 //colors
 int colorPurple[] = { 0xff, 0x00, 0xff };
@@ -21,14 +35,20 @@ int colorOrange[] = { 0xff, 0xa1, 0x00 };
 int colorRed[] = { 0xff, 0x00, 0x00 };
 int colorPink[] = { 0xff, 0x4a, 0x9e };
 
-bool wiflyConnected = false;
-bool notifyrConnected = false;
+boolean wiflyConnected = false;
+boolean notifyrConnected = false;
+boolean clientConnected = false;
+boolean loggin = false;
 
-int readingLight = 0;
-int readingLiquid = 0;
+long readingLight = 0;
+long readingLiquid = 0;
+
+long readingLightCount = 0;
+long readingLiquidCount = 0;
 
 void setup() {
   pinMode(PIN_POWER, OUTPUT);
+  
   pinMode(PIN_STATUS_RED, OUTPUT);
   pinMode(PIN_STATUS_GRN, OUTPUT);
   pinMode(PIN_STATUS_BLU, OUTPUT);
@@ -38,7 +58,7 @@ void setup() {
 
   Serial.begin(9600);
 
-  lightColor(colorPurple);
+  lightOn(colorPurple);
   Serial.println("Initializing WiFi...");
   WiFly.begin();
 
@@ -51,7 +71,7 @@ void setup() {
       wiflyConnected = true;
     } 
     else {
-      lightColor(colorOrange);
+      lightOn(colorOrange);
       Serial.println("Association failed, trying again in 3 seconds...");
       Serial.println();
       delay(3000);
@@ -60,76 +80,117 @@ void setup() {
 
   Serial.println();
 
-  NotifyrClient::debug();
-
-  while (!notifyrConnected) {
-    Serial.print("Connecting to Notifyr (");
-    Serial.print(NOTIFYR_KEY);
-    Serial.println(")...");
-    if (notifyr.connect(NOTIFYR_KEY, "sms")) {
-      lightColor(colorGreen);
-      Serial.println("Connected!");
-      notifyrConnected = true;
-      notifyr.bind(doPower);
-//      notifyr.bind(doLight);
-    } 
-    else {
-      lightColor(colorPink);
-      Serial.println("Connection failed, trying again in 3 seconds...");
-      Serial.println();
-      delay(3000);
-    }
-  }
+//  NotifyrClient::debug();
+//
+//  while (!notifyrConnected) {
+//    Serial.print("Connecting to Notifyr (");
+//    Serial.print(NOTIFYR_KEY);
+//    Serial.println(")...");
+//    if (notifyr.connect(NOTIFYR_KEY, "sms")) {
+//      lightOn(colorGreen);
+//      Serial.println("Connected!");
+//      notifyrConnected = true;
+//      notifyr.bind(doPower);
+//    } 
+//    else {
+//      lightOn(colorPink);
+//      Serial.println("Connection failed, trying again in 3 seconds...");
+//      Serial.println();
+//      delay(3000);
+//    }
+//  }
 }
 
 void loop() {
-  notifyr.listen();
+//  notifyr.listen();
   
-  readingLiquid = analogRead(PIN_SENSOR_LIQUID);
-  readingLight = analogRead(PIN_SENSOR_LIGHT);
+  if (sensorSampleMetro.check() == 1) {
+    readingLight += analogRead(PIN_SENSOR_LIGHT);
+    readingLiquid += analogRead(PIN_SENSOR_LIQUID);
+    
+    readingLightCount++;
+    readingLiquidCount++;
+  }
   
-//  Serial.println("Liquid: " + String(readingLiquid));
-//  Serial.println("Light: " + String(readingLight));
+  if (sensorSendMetro.check() == 1) {
+    logEvent("light", String(readingLight / readingLightCount));
+    logEvent("liquid", String(readingLiquid / readingLiquidCount));
+    
+    readingLight = 0;
+    readingLiquid = 0;
+    
+    readingLightCount = 0;
+    readingLiquidCount = 0;
+  }
+  
+  processEvents();
 }
 
 void doPower(String data) {
+  data.toLowerCase();
   Serial.print("doPower: ");
   Serial.println(data);
-  if (data == "true" || data == "1" || data == "on" || data == "high") {
+  if (data == "1" || data == "true" || data == "on") {
     digitalWrite(PIN_POWER, HIGH);
-    lightColor(colorBlue);
-  } 
-  else {
-    digitalWrite(PIN_POWER, LOW);
-    lightColor(colorGreen);
-  }
-}
-
-void doLight(String data) {
-  Serial.print("doLight: ");
-  Serial.println(data);
-  if (data.charAt(0) == '0') {
-    analogWrite(PIN_STATUS_RED, 255);
-    analogWrite(PIN_STATUS_GRN, 0);
-    analogWrite(PIN_STATUS_BLU, 0);
-  } else if (data.charAt(0) == '1') {
-    analogWrite(PIN_STATUS_RED, 0);
-    analogWrite(PIN_STATUS_GRN, 255);
-    analogWrite(PIN_STATUS_BLU, 0);
+    lightOn(colorBlue);
+    logEvent("power", "on");
   } else {
-    analogWrite(PIN_STATUS_RED, 0);
-    analogWrite(PIN_STATUS_GRN, 0);
-    analogWrite(PIN_STATUS_BLU, 255);
+    digitalWrite(PIN_POWER, LOW);
+    lightOn(colorGreen);
+    logEvent("power", "off");
   }
 }
 
-void lightColor(int color[]) {
-  analogWrite(PIN_STATUS_RED, gammaCorrect(color[0]));
-  analogWrite(PIN_STATUS_GRN, gammaCorrect(color[1]));
-  analogWrite(PIN_STATUS_BLU, gammaCorrect(color[2]));
+void logEvent(String event, String data) {
+  String payload = "event=" + event + "&data=" + data;
+  events.push(payload);
 }
 
-int gammaCorrect(int channel) {
+void processEvents() {
+  if (!events.isEmpty() && !clientConnected) {
+    if (client.connect()) {
+      String payload = events.pop();
+      Serial.println(payload);
+      Serial.println("Sending Event: Connected!");
+      clientConnected = true;
+      //Make the request
+      client.println("POST " + String(ENDPOINT) + " HTTP/1.1");
+      client.println("Host: " + String(HOST));
+      client.println("Connection: close");
+      client.println("Content-Type: application/x-www-form-urlencoded");
+      client.println("Content-length: " + String(payload.length()));
+      client.println();
+      client.println(payload);
+    } else {
+      Serial.println("Sending Event: Failed :(");
+      clientConnected = false;
+    }
+  }
+  
+  if (client.available()) {
+    char c = client.read();
+    Serial.print(c);
+  }
+  
+  if (clientConnected && !client.connected()) {
+    client.stop();
+    clientConnected = false;
+  }
+}
+
+void lightOn(int color[]) {
+  analogWrite(PIN_STATUS_RED, correctGamma(color[0]));
+  analogWrite(PIN_STATUS_GRN, correctGamma(color[1]));
+  analogWrite(PIN_STATUS_BLU, correctGamma(color[2]));
+}
+
+void lightOff() {
+  analogWrite(PIN_STATUS_RED, 0);
+  analogWrite(PIN_STATUS_GRN, 0);
+  analogWrite(PIN_STATUS_BLU, 0);
+}
+
+int correctGamma(int channel) {
   return channel == 0 ? 0 : pow(255, ((channel + 1) / 4) / 64.0) + 0.5;
 }
 
