@@ -8,11 +8,11 @@
 //app settings
 const boolean DEBUG = false;
 const String NAME = String("Vibelight");
-const String VERSION = String("1.5");
+const String VERSION = String("1.6");
 //local network settings
 byte mac[] = { 0x90, 0xA2, 0xDB, 0x00, 0x00, 0x01 };
 //server network settings
-byte server[] = { 70,32,87,92 }; // vibefeelr 70.32.87.92
+byte server[] = { 54,243,227,22 }; // vibefeelr 54.243.227.22
 String host = String("api.vibe.me");
 int port = 80;
 String endpoint = String("/vibelight/");

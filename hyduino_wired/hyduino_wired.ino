@@ -1,6 +1,6 @@
 #include <Metro.h>
 #include <SPI.h>
-#include <WiFly.h>
+#include <Ethernet.h>
 #include <QueueList.h>
 #include "Credentials.h"
 
@@ -17,13 +17,15 @@
 #define POLL_ENDPOINT "/v1/poll"
 #define EVENT_ENDPOINT "/v1/events"
 
-WiFlyClient client = WiFlyClient(HOST, 80);
+byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
+
+EthernetClient client;
 
 QueueList <String> events;
- 
+
 Metro sensorSampleMetro = Metro(100);
 Metro sensorSendMetro = Metro(60000);
-Metro pollMetro = Metro(10000);
+Metro pollMetro = Metro(6000);
 Metro healthMetro = Metro(180000);
 
 //colors
@@ -35,9 +37,9 @@ int colorOrange[] = { 0xff, 0xa1, 0x00 };
 int colorRed[] = { 0xff, 0x00, 0x00 };
 int colorPink[] = { 0xff, 0x4a, 0x9e };
 
-boolean wiflyConnected = false;
+//boolean wiflyConnected = false;
 boolean clientConnected = false;
-boolean receiving = false;
+boolean receiving = false;  
 
 long readingLight = 0;
 long readingLiquid = 0;
@@ -60,16 +62,16 @@ void setup() {
 
   Serial.begin(9600);
   
-  initWiFly();
+  initEthernet();
 }
 
 void loop() {
 
   if (healthMetro.check()) {
-    sLog("WiFly Error: Attempting WiFly Reboot");
+    sLog("Ethernet Error: Attempting Ethernet Reboot");
     lightOn(colorRed);
-    initWiFly();
-    logEvent("wifly", "error", true);
+    initEthernet();
+    logEvent("ethernet", "error", true);
   }
 
   if (sensorSampleMetro.check()) {
@@ -102,38 +104,18 @@ void loop() {
   }
 }
 
-void initWiFly() {
+void initEthernet() {
   lightOn(colorPink);
-  sLog("Initializing WiFi...");
-  WiFly.begin();
+  sLog("Initializing Ethernet...");
+  Ethernet.begin(mac);
   
-//  delay(1000);
-  
-  wiflyConnected = false;
   clientConnected = false;
   receiving = false;
   healthMetro.reset();
-
-  while (!wiflyConnected) {
-    Serial.print("Attempting to join: ");
-    sLog(SSID);
-
-    if (WiFly.join(SSID, PASSPHRASE, true)) {  
-      lightOn(colorGreen);
-      sLog("Joined!");
-      wiflyConnected = true;
-    } 
-    else {
-      lightOn(colorOrange);
-      sLog("Association failed, trying again in 3 seconds...");
-      sLog();
-      delay(3000);
-    }
-  }
-
-  sLog();
   
-  logEvent("wifly", "connected", true);
+  lightOn(colorGreen);
+  sLog();
+  logEvent("ethernet", "connected", true);
 }
 
 void doPower(String data) {
@@ -164,7 +146,7 @@ void logEvent(String event, String data, boolean force) {
 
 void poll() {
   if (pollMetro.check() && !clientConnected) {
-    if (client.connect()) {
+    if (client.connect(HOST, 80)) {
       clientConnected = true;
       sLog("Polling: Connected!");
       //Make the request
@@ -173,12 +155,11 @@ void poll() {
       client.println("Authorization: Basic " + String(BASIC_AUTH));
       client.println("Connection: close");
       client.println();
-      client.println();
       healthMetro.reset();
-//      delay(5000);
+      delay(5000);
     } 
     else {
-      sLog("Polling: Failed :(");
+      sLog("Sending Event: Failed :(");
       clientConnected = false;
     }
   }
@@ -219,7 +200,7 @@ void poll() {
 
 void processEvents() {
   if (!events.isEmpty() && !clientConnected) {
-    if (client.connect()) {
+    if (client.connect(HOST, 80)) {
       clientConnected = true;
       String payload = events.pop();
       sLog(payload);
