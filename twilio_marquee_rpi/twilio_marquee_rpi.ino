@@ -1,8 +1,5 @@
 #include <HT1632.h>
-#include <SPI.h>
-#include <Ethernet.h>
-#include <NotifyrClient.h>
-#include "Credentials.h"
+#include <RPiSerialClient.h>
 
 #define DEBUG true
 
@@ -39,30 +36,28 @@
 #define CS23  8
 #define CS24  9
 
-byte mac[] = { 0x90, 0xA2, 0xDB, 0x00, 0x00, 0x27 };
 String response = String();
 String sms = String();
 unsigned long charCounter = 0;
-bool notifyrConnected = false;
 
 const int CHAR_WIDTH = 28;
 const int LARGE_CHAR_WIDTH = 14;
 const int LARGE_CHAR_MAX = 42;
 
-NotifyrClient notifyr;
+RPiSerialClient rpi;
 
 HT1632LEDMatrix matrix1 = HT1632LEDMatrix(DATA1, WR1, CS1, CS2, CS3, CS4, CS5, CS6, CS7);
 HT1632LEDMatrix matrix2 = HT1632LEDMatrix(DATA2, WR2, CS9, CS10, CS11, CS12, CS13, CS14, CS15);
 HT1632LEDMatrix matrix3 = HT1632LEDMatrix(DATA3, WR3, CS17, CS18, CS19, CS20, CS21, CS22, CS23);
 
 void setup() {
-  Serial.begin(9600);
+  rpi.begin();
 
   matrix1.begin(HT1632_COMMON_16NMOS);
   matrix2.begin(HT1632_COMMON_16NMOS);
   matrix3.begin(HT1632_COMMON_16NMOS);
 
-  Serial.println("Writing to matrix1");
+//  Serial.println("Writing to matrix1");
   matrix1.clearScreen();
   matrix1.setTextSize(2);
   matrix1.setTextColor(1);
@@ -71,7 +66,7 @@ void setup() {
   matrix1.writeScreen();  
   matrix1.setTextSize(1);
 
-  Serial.println("Writing to matrix2");
+//  Serial.println("Writing to matrix2");
   matrix2.clearScreen();
   matrix2.setTextSize(2);
   matrix2.setTextColor(1);
@@ -80,7 +75,7 @@ void setup() {
   matrix2.writeScreen();
   matrix2.setTextSize(1);
 
-  Serial.println("Writing to matrix3");
+//  Serial.println("Writing to matrix3");
   matrix3.clearScreen();
   matrix3.setTextSize(2);
   matrix3.setTextColor(1);
@@ -88,44 +83,16 @@ void setup() {
   matrix3.print("INITIALIZING..");
   matrix3.writeScreen();
 
-  Serial.println("Initializing Ethernet...");
-  Ethernet.begin(mac);
-
   if (DEBUG) {
-    NotifyrClient::debug();
+    RPiSerialClient::debug();
   }
-
-  while (!notifyrConnected) {
-    matrix3.clearScreen();
-    matrix3.setCursor(0, 0);
-    matrix3.print("CONNECTING...");
-    matrix3.writeScreen();
-    
-    Serial.print("Connecting to Notifyr (");
-    Serial.print(NOTIFYR_KEY);
-    Serial.println(")...");
-    if (notifyr.connect(NOTIFYR_KEY, "sms")) {
-      matrix3.clearScreen();
-      matrix3.setCursor(0, 0);
-      matrix3.print("CONNECTED!    ");
-      matrix3.writeScreen();
-      
-      Serial.println("Connected!");
-      notifyrConnected = true;
-      notifyr.bind(displayData);
-    } else {
-      matrix3.clearScreen();
-      matrix3.setCursor(0, 0);
-      matrix3.print("FAILED RETRY..");
-      matrix3.writeScreen();
-      
-      Serial.println("Connection failed, trying again in 3 seconds...");
-      Serial.println();
-      delay(3000);
-    }
-  }
-
-//  Serial.println("Joined: " + Ethernet.localIP());
+  
+  rpi.bind(displayData);
+  
+  matrix3.clearScreen();
+  matrix3.setCursor(0, 0);
+  matrix3.print("READY!        ");
+  matrix3.writeScreen();
   
   matrix1.setTextSize(1);
   matrix2.setTextSize(1);
@@ -133,7 +100,7 @@ void setup() {
 }
 
 void loop() {
-  notifyr.listen();
+  rpi.listen();
 }
 
 void displayData(String data) {

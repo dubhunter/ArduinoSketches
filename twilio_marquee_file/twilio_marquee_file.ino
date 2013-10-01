@@ -1,10 +1,9 @@
 #include <HT1632.h>
 #include <SPI.h>
 #include <Ethernet.h>
-#include <NotifyrClient.h>
-#include "Credentials.h"
+#include <Metro.h>
 
-#define DEBUG true
+#define DEBUG false
 
 #define DATA1 22
 #define WR1   23
@@ -39,17 +38,26 @@
 #define CS23  8
 #define CS24  9
 
+#define HOST "sign.willmason.me"
+#define ENDPOINT "/message.txt"
+
 byte mac[] = { 0x90, 0xA2, 0xDB, 0x00, 0x00, 0x27 };
 String response = String();
-String sms = String();
+String lastMessage = String();
 unsigned long charCounter = 0;
-bool notifyrConnected = false;
+boolean clientConnected = false;
+boolean receiving = false;
+char lastChar;
+String buffer = "";
 
 const int CHAR_WIDTH = 28;
 const int LARGE_CHAR_WIDTH = 14;
 const int LARGE_CHAR_MAX = 42;
 
-NotifyrClient notifyr;
+EthernetClient client;
+
+Metro pollMetro = Metro(5000);
+Metro healthMetro = Metro(30000);
 
 HT1632LEDMatrix matrix1 = HT1632LEDMatrix(DATA1, WR1, CS1, CS2, CS3, CS4, CS5, CS6, CS7);
 HT1632LEDMatrix matrix2 = HT1632LEDMatrix(DATA2, WR2, CS9, CS10, CS11, CS12, CS13, CS14, CS15);
@@ -90,40 +98,13 @@ void setup() {
 
   Serial.println("Initializing Ethernet...");
   Ethernet.begin(mac);
-
-  if (DEBUG) {
-    NotifyrClient::debug();
-  }
-
-  while (!notifyrConnected) {
-    matrix3.clearScreen();
-    matrix3.setCursor(0, 0);
-    matrix3.print("CONNECTING...");
-    matrix3.writeScreen();
-    
-    Serial.print("Connecting to Notifyr (");
-    Serial.print(NOTIFYR_KEY);
-    Serial.println(")...");
-    if (notifyr.connect(NOTIFYR_KEY, "sms")) {
-      matrix3.clearScreen();
-      matrix3.setCursor(0, 0);
-      matrix3.print("CONNECTED!    ");
-      matrix3.writeScreen();
-      
-      Serial.println("Connected!");
-      notifyrConnected = true;
-      notifyr.bind(displayData);
-    } else {
-      matrix3.clearScreen();
-      matrix3.setCursor(0, 0);
-      matrix3.print("FAILED RETRY..");
-      matrix3.writeScreen();
-      
-      Serial.println("Connection failed, trying again in 3 seconds...");
-      Serial.println();
-      delay(3000);
-    }
-  }
+  
+  matrix3.clearScreen();
+  matrix3.setCursor(0, 0);
+  matrix3.print("CONNECTED!    ");
+  matrix3.writeScreen();
+  
+  Serial.println("Connected!");
 
 //  Serial.println("Joined: " + Ethernet.localIP());
   
@@ -133,7 +114,76 @@ void setup() {
 }
 
 void loop() {
-  notifyr.listen();
+
+  if (healthMetro.check()) {
+    sLog("Ethernet Error: Attempting Ethernet Reboot");
+    buffer = "";
+    clientConnected = false;
+    receiving = false;
+    client.stop();
+    Ethernet.begin(mac);
+  }
+  
+  poll();
+}
+
+void poll() {
+  if (pollMetro.check() && !clientConnected) {
+    sLog("Polling: Connecting...");
+    if (client.connect(HOST, 80)) {
+      clientConnected = true;
+      sLog("Polling: Connected!");
+      //Make the request
+      client.println("GET " + String(ENDPOINT) + " HTTP/1.1");
+      client.println("Host: " + String(HOST));
+//      client.println("Authorization: Basic " + String(BASIC_AUTH));
+      client.println("Connection: close");
+      client.println();
+      sLog("Polling: Headers sent");
+      healthMetro.reset();
+      delay(1000);
+    } 
+    else {
+      sLog("Polling: Failed :(");
+      clientConnected = false;
+    }
+  }
+  
+  if (client.available()) {
+    char c = client.read();
+
+    if (c != '\r') { //ignore \r (and dont put it in lastChar)
+      if (c != lastChar || c != ' ') { //ignore double spaces
+//        Serial.print(c);
+        if (receiving && lastChar == '\n' && c == '\n') { //detect double newline
+          //remove newline and quote
+          buffer = buffer.substring(0, buffer.length() - 2);
+          sLog("Data: " + buffer);
+          if (lastMessage != buffer) {
+            displayData(buffer);
+            lastMessage = buffer;
+          }
+          //reset
+          buffer = "";
+          receiving = false;
+          client.stop();
+          clientConnected = false;
+        }
+        
+        buffer += c;
+        if (buffer.endsWith("data: \"")) {
+          sLog("Receiving Event...");
+          buffer = "";
+          receiving = true;
+        }
+        
+        if (!receiving && c == '\n') {
+          buffer = "";
+        }
+      }
+      lastChar = c;
+    }
+  }
 }
 
 void displayData(String data) {
